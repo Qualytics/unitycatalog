@@ -21,12 +21,16 @@ lazy val javacRelease17 = Seq("--release", "17")
 
 lazy val scala213 = "2.13.17"
 
-lazy val deltaVersion = sys.props.getOrElse("deltaVersion", "4.3.1")
 // Intentionally shadows CrossSparkVersions.autoImport.sparkVersion (SettingKey).
 // This String val is used for libraryDependencies coordinates; the SettingKey is
 // queryable in SBT via `show spark/sparkVersion`.
 lazy val sparkVersion = CrossSparkVersions.getSparkArtifactVersion()
 lazy val sparkMajorMinorVersion = CrossSparkVersions.getSparkVersionSpec().shortVersion
+
+// Spark 4.2 ships Hadoop 3.5.0 (needed on JDK 24+, which removed Subject.getSubject) and has
+// no delta-spark_4.2 before Delta 4.4.0; older Spark lines keep the previous defaults.
+lazy val deltaVersion = sys.props.getOrElse(
+  "deltaVersion", if (sparkMajorMinorVersion == "4.2") "4.4.0" else "4.3.1")
 
 // delta-spark is only needed for tests. When UC is published to local Maven before
 // Delta is built (e.g. CI pre-Delta publishM2 step), the matching Delta artifact may
@@ -37,7 +41,8 @@ def deltaSparkTestDeps: Seq[ModuleID] =
 
 // Apache Snapshots resolver is in build/sbt-config/repositories (global).
 // No per-module sparkResolvers needed.
-lazy val hadoopVersion = sys.props.getOrElse("hadoopVersion", "3.4.2")
+lazy val hadoopVersion = sys.props.getOrElse(
+  "hadoopVersion", if (sparkMajorMinorVersion == "4.2") "3.5.0" else "3.4.2")
 
 // Library versions
 lazy val icebergVersion = "1.11.0"
@@ -214,7 +219,7 @@ lazy val client = (project in file("clients/java"))
       "jakarta.annotation" % "jakarta.annotation-api" % "3.0.0" % Provided,
 
       // Test dependencies
-      "org.mockito" % "mockito-core" % "5.11.0" % Test,
+      "org.mockito" % "mockito-core" % "5.24.0" % Test,
       "org.mockito" % "mockito-inline" % "5.2.0" % Test,
       "org.mockito" % "mockito-junit-jupiter" % "5.12.0" % Test,
       "org.junit.jupiter" % "junit-jupiter" % "5.10.3" % Test,
@@ -400,8 +405,8 @@ lazy val server = (project in file("server"))
       "com.zaxxer" % "HikariCP" % "7.1.0",
 
       "jakarta.activation" % "jakarta.activation-api" % "2.1.3",
-      "net.bytebuddy" % "byte-buddy" % "1.14.15",
-      "org.projectlombok" % "lombok" % "1.18.32" % Provided,
+      "net.bytebuddy" % "byte-buddy" % "1.17.7",
+      "org.projectlombok" % "lombok" % "1.18.48" % Provided,
 
       // For ALDS access
       "com.azure" % "azure-identity" % "1.18.6",
@@ -447,7 +452,7 @@ lazy val server = (project in file("server"))
 
       // Test dependencies
       "org.junit.jupiter" %  "junit-jupiter" % "5.10.3" % Test,
-      "org.mockito" % "mockito-core" % "5.11.0" % Test,
+      "org.mockito" % "mockito-core" % "5.24.0" % Test,
       "org.mockito" % "mockito-inline" % "5.2.0" % Test,
       "org.mockito" % "mockito-junit-jupiter" % "5.12.0" % Test,
       "net.aichler" % "jupiter-interface" % JupiterKeys.jupiterVersion.value % Test,
@@ -718,13 +723,13 @@ lazy val spark = (project in file("connectors/spark"))
       // Test dependencies
       "org.junit.jupiter" % "junit-jupiter" % "5.10.3" % Test,
       "org.assertj" % "assertj-core" % "3.26.3" % Test,
-      "org.mockito" % "mockito-core" % "5.11.0" % Test,
+      "org.mockito" % "mockito-core" % "5.24.0" % Test,
       "org.mockito" % "mockito-inline" % "5.2.0" % Test,
       "org.mockito" % "mockito-junit-jupiter" % "5.12.0" % Test,
       "net.aichler" % "jupiter-interface" % JupiterKeys.jupiterVersion.value % Test,
       "org.apache.hadoop" % "hadoop-client-runtime" % hadoopVersion,
       "org.apache.hadoop" % "hadoop-aws" % hadoopVersion % Test,
-      "org.projectlombok" % "lombok" % "1.18.32" % Test,
+      "org.projectlombok" % "lombok" % "1.18.48" % Test,
       "com.google.cloud.bigdataoss" % "gcs-connector" % "3.0.2" % Test classifier "shaded",
     ) ++ deltaSparkTestDeps,
     dependencyOverrides ++= Seq(
@@ -784,7 +789,7 @@ lazy val hadoop = (project in file("connectors/hadoop"))
       // Test dependencies
       "org.junit.jupiter" % "junit-jupiter" % "5.10.3" % Test,
       "org.assertj" % "assertj-core" % "3.26.3" % Test,
-      "org.mockito" % "mockito-core" % "5.11.0" % Test,
+      "org.mockito" % "mockito-core" % "5.24.0" % Test,
       "org.mockito" % "mockito-inline" % "5.2.0" % Test,
       "org.mockito" % "mockito-junit-jupiter" % "5.12.0" % Test,
       "net.aichler" % "jupiter-interface" % JupiterKeys.jupiterVersion.value % Test,
@@ -812,7 +817,7 @@ lazy val integrationTests = (project in file("integration-tests"))
       "org.junit.jupiter" % "junit-jupiter" % "5.10.3" % Test,
       "net.aichler" % "jupiter-interface" % JupiterKeys.jupiterVersion.value % Test,
       "org.assertj" % "assertj-core" % "3.26.3" % Test,
-      "org.projectlombok" % "lombok" % "1.18.32" % Provided,
+      "org.projectlombok" % "lombok" % "1.18.48" % Provided,
       "org.apache.spark" %% "spark-sql" % sparkVersion % Test,
       "org.apache.hadoop" % "hadoop-aws" % hadoopVersion % Test,
       "org.apache.hadoop" % "hadoop-azure" % hadoopVersion % Test,
