@@ -50,6 +50,11 @@ final class UCProxyTestFixture {
 
   /** Builds the proxy, initializes it, and injects the mock {@code schemasApi}. */
   UCProxyTestFixture build() throws Exception {
+    return build(Collections.emptyMap());
+  }
+
+  /** Same as {@link #build()}, passing {@code options} to {@code UCProxy.initialize}. */
+  UCProxyTestFixture build(Map<String, String> options) throws Exception {
     ApiClient mockApiClient = mock(ApiClient.class);
     TokenProvider mockTokenProvider = mock(TokenProvider.class);
     TemporaryCredentialsApi mockTempCredApi = mock(TemporaryCredentialsApi.class);
@@ -81,7 +86,7 @@ final class UCProxyTestFixture {
     proxyObj = ctor.newInstance(args);
 
     proxy = (TableCatalog) proxyObj;
-    proxy.initialize(CATALOG_NAME, new CaseInsensitiveStringMap(Collections.emptyMap()));
+    proxy.initialize(CATALOG_NAME, new CaseInsensitiveStringMap(options));
 
     // Inject mock schemasApi (initialize() creates a real one from apiClient).
     Field schemasField = proxyClass.getDeclaredField("schemasApi");

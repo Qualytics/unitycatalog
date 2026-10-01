@@ -29,7 +29,7 @@ trait UCProxyViewSupport { self: UCProxy =>
   // a VIEW `CatalogTable` routes resolution through Spark's relation resolver, which parses
   // `viewText` against the view's default catalog/namespace.
   protected[spark] def buildV1ViewTable(t: UCTableInfo): Table = {
-    val identifier = TableIdentifier(t.getName, Some(t.getSchemaName), Some(t.getCatalogName))
+    val identifier = TableIdentifier(t.getName, Some(t.getSchemaName), Some(self.name()))
     val fields = Option(t.getColumns).map(_.asScala).getOrElse(Seq.empty)
       .map(self.toStructField).toArray
     val base = Option(t.getProperties).map(_.asScala.toMap).getOrElse(Map.empty[String, String])

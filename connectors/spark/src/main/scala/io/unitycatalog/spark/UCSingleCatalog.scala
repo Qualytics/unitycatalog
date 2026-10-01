@@ -314,7 +314,7 @@ class UCSingleCatalog
       properties: util.Map[String, String]): util.Map[String, String] = {
     // Get staging table location and table id from UC
     val createStagingTable = new CreateStagingTable()
-      .catalogName(name())
+      .catalogName(ucProxy.ucCatalogName)
       .schemaName(ident.namespace().head)
       .name(ident.name())
     val stagingTableInfo = tablesApi.createStagingTable(createStagingTable)
@@ -385,7 +385,7 @@ class UCSingleCatalog
       tableInfo: UCTableInfo,
       properties: util.Map[String, String],
       operation: String): util.Map[String, String] = {
-    val fullTableName = UCSingleCatalog.fullTableNameForApi(name(), ident)
+    val fullTableName = UCSingleCatalog.fullTableNameForApi(ucProxy.ucCatalogName, ident)
 
     // First, ensure the caller is not trying to override system-managed properties. Called
     // explicitly here (and again inside validateAndDefault below) so a system-managed override on
@@ -683,7 +683,7 @@ class UCSingleCatalog
       ident: Identifier,
       allowMissingTable: Boolean): Option[UCTableInfo] = {
     UCSingleCatalog.checkUnsupportedNestedNamespace(ident.namespace())
-    val fullTableName = UCSingleCatalog.fullTableNameForApi(name(), ident)
+    val fullTableName = UCSingleCatalog.fullTableNameForApi(ucProxy.ucCatalogName, ident)
     try {
       Some(tablesApi.getTable(fullTableName,
         /* readStreamingTableAsManaged = */ false,
@@ -935,11 +935,19 @@ private[spark] class UCProxy(
   with SupportsNamespaces
   with Logging {
   private[this] var name: String = null
+  private[this] var ucCatalog: String = null
   private[this] var schemasApi: SchemasApi = null
 
   override def initialize(name: String, options: CaseInsensitiveStringMap): Unit = {
     this.name = name
+    this.ucCatalog = Option(options.get(OptionsUtil.WAREHOUSE)).filter(_.nonEmpty).getOrElse(name)
     schemasApi = new SchemasApi(apiClient)
+  }
+
+  // AIDEV-NOTE: UC-side catalog name for every API call; Spark-facing identifiers keep name().
+  private[spark] def ucCatalogName: String = {
+    assert(this.ucCatalog != null)
+    this.ucCatalog
   }
 
   override def name(): String = {
@@ -959,7 +967,7 @@ private[spark] class UCProxy(
   }
 
   private[spark] def listUCTableLikes(namespace: Array[String]): Seq[UCTableInfo] = {
-    val catalogName = this.name
+    val catalogName = ucCatalogName
     val schemaName = namespace.head
     val tables = ArrayBuffer.empty[UCTableInfo]
     var pageToken: String = null
@@ -981,7 +989,7 @@ private[spark] class UCProxy(
   // is merely probing (a bare `parquet.`s3://...`` path) as a query failure.
   private[spark] def getUCTableLike(ident: Identifier): Option[UCTableInfo] = {
     if (!UCSingleCatalog.isAddressableTableName(ident)) return None
-    val fullName = UCSingleCatalog.fullTableNameForApi(this.name, ident)
+    val fullName = UCSingleCatalog.fullTableNameForApi(ucCatalogName, ident)
     try {
       Some(tablesApi.getTable(
         fullName,
@@ -1023,7 +1031,7 @@ private[spark] class UCProxy(
   }
 
   private[spark] def loadV1Table(t: UCTableInfo): Table = {
-    val identifier = TableIdentifier(t.getName, Some(t.getSchemaName), Some(t.getCatalogName))
+    val identifier = TableIdentifier(t.getName, Some(t.getSchemaName), Some(name()))
     val partitionCols = scala.collection.mutable.ArrayBuffer.empty[(String, Int)]
     val fields = t.getColumns.asScala.map { col =>
       Option(col.getPartitionIndex).foreach { index =>
@@ -1111,7 +1119,7 @@ private[spark] class UCProxy(
     val createTable = new CreateTable()
     createTable.setName(ident.name())
     createTable.setSchemaName(ident.namespace().head)
-    createTable.setCatalogName(this.name)
+    createTable.setCatalogName(ucCatalogName)
 
     val hasExternalClause = properties.containsKey(TableCatalog.PROP_EXTERNAL)
     val storageLocation = properties.get(TableCatalog.PROP_LOCATION)
@@ -1254,7 +1262,7 @@ private[spark] class UCProxy(
     }
     // `deleteTable` returns the (empty) response body, not an HTTP status; a real failure throws
     // ApiException. Issue the delete for its side effect and report success.
-    tablesApi.deleteTable(UCSingleCatalog.fullTableNameForApi(this.name, ident))
+    tablesApi.deleteTable(UCSingleCatalog.fullTableNameForApi(ucCatalogName, ident))
     true
   }
 
@@ -1268,7 +1276,7 @@ private[spark] class UCProxy(
     val schemas = ArrayBuffer.empty[Array[String]]
     var pageToken: String = null
     do {
-      val response = schemasApi.listSchemas(name, /* limit */ 0, pageToken)
+      val response = schemasApi.listSchemas(ucCatalogName, /* limit */ 0, pageToken)
       schemas ++= response.getSchemas.asScala.map(schema => Array(schema.getName))
       pageToken = response.getNextPageToken
     } while (pageToken != null && pageToken.nonEmpty)
@@ -1282,7 +1290,7 @@ private[spark] class UCProxy(
   override def loadNamespaceMetadata(namespace: Array[String]): util.Map[String, String] = {
     UCSingleCatalog.checkUnsupportedNestedNamespace(namespace)
     val schema = try {
-      schemasApi.getSchema(name + "." + namespace(0))
+      schemasApi.getSchema(ucCatalogName + "." + namespace(0))
     } catch {
       case e: ApiException if e.getCode == 404 =>
         throw new NoSuchNamespaceException(namespace)
@@ -1304,7 +1312,7 @@ private[spark] class UCProxy(
   override def createNamespace(namespace: Array[String], metadata: util.Map[String, String]): Unit = {
     UCSingleCatalog.checkUnsupportedNestedNamespace(namespace)
     val createSchema = new CreateSchema()
-    createSchema.setCatalogName(this.name)
+    createSchema.setCatalogName(ucCatalogName)
     createSchema.setName(namespace.head)
     createSchema.setProperties(metadata)
     // Spark 4.2 removed the namespaceExists() pre-check from CreateNamespaceExec. It relies on the
@@ -1326,7 +1334,7 @@ private[spark] class UCProxy(
 
   override def dropNamespace(namespace: Array[String], cascade: Boolean): Boolean = {
     UCSingleCatalog.checkUnsupportedNestedNamespace(namespace)
-    schemasApi.deleteSchema(name + "." + namespace.head, cascade)
+    schemasApi.deleteSchema(ucCatalogName + "." + namespace.head, cascade)
     true
   }
 }

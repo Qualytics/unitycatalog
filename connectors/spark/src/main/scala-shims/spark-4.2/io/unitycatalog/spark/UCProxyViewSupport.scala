@@ -138,7 +138,7 @@ trait UCProxyViewSupport extends RelationCatalog { self: UCProxy =>
     val ct = new CreateTable()
       .name(ident.name())
       .schemaName(ident.namespace().head)
-      .catalogName(this.name)
+      .catalogName(ucCatalogName)
       .tableType(ucTableType)
       .viewDefinition(view.queryText())
 
@@ -211,7 +211,7 @@ trait UCProxyViewSupport extends RelationCatalog { self: UCProxy =>
     }
     // `deleteTable` returns the (empty) response body, not an HTTP status; a real failure throws
     // ApiException. Issue the delete for its side effect and report success.
-    tablesApi.deleteTable(UCSingleCatalog.fullTableNameForApi(this.name, ident))
+    tablesApi.deleteTable(UCSingleCatalog.fullTableNameForApi(ucCatalogName, ident))
     true
   }
 
@@ -246,7 +246,7 @@ trait UCProxyViewSupport extends RelationCatalog { self: UCProxy =>
       UCViewProperties.extractQueryColumnNames(props).getOrElse(columns.map(_.name()))
     val (currentCatalog, currentNamespace) =
       UCViewProperties.extractCreationContext(props).getOrElse(
-        (t.getCatalogName, Array(t.getSchemaName)))
+        (name(), Array(t.getSchemaName)))
     // The VIEW_SQL_CONFIG_PREFIX / VIEW_SCHEMA_MODE keys are surfaced via `withSqlConfigs` /
     // `withSchemaMode`; drop them from `props` so they don't also leak into the user-visible
     // `properties()` map and get re-persisted (double-counted) on a createView/replace round-trip.
